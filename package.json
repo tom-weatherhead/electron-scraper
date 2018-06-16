@@ -1,0 +1,35 @@
+{
+  "name": "electron-scraper",
+  "version": "0.0.0",
+  "description": "A Web page scraper implemented in Electron and Node.js",
+  "main": "main.js",
+  "homepage": "https://github.com/tom-weatherhead/electron-scraper#readme",
+  "repository": {
+    "type": "git",
+    "url": "git+https://github.com/tom-weatherhead/electron-scraper.git"
+  },
+  "bugs": {
+    "url": "https://github.com/tom-weatherhead/electron-scraper/issues"
+  },
+  "scripts": {
+    "lint": "grunt eslint",
+    "nsp": "grunt nsp",
+    "start": "electron .",
+    "test": "grunt"
+  },
+  "keywords": [
+    "Electron",
+    "scraper"
+  ],
+  "devDependencies": {
+    "electron": "^2.0.0"
+  },
+  "dependencies": {
+    "http-get-regex-capture": "^0.1.1"
+  },
+  "author": {
+    "name": "Tom Weatherhead",
+    "url": "https://github.com/tom-weatherhead"
+  },
+  "license": "MIT"
+}
