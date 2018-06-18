@@ -1,11 +1,33 @@
 // This file is required by the index.html file and will be executed in the renderer process for that window.
 // All of the Node.js APIs are available in this process.
 
-const electron = require('electron');
-// const remote = electron.remote;
-const ipc = electron.ipcRenderer;
+const { ipcRenderer /*, remote */ } = require('electron');
 
 const matchRegexesInWebPage = require('http-get-regex-capture');
+
+const defaultSettings = {
+	url: "https://nodejs.org/en/",
+	regexes: [
+		/Download v{0,1}(\S+)\s+Current/
+	],
+	options: {
+		returnHttpResponseStatus: true
+	},
+	stringificationTemplate: [
+		"Current version of Node.js :",
+		0
+	]
+};
+
+const settings = require('./settings.json') || defaultSettings;
+//const settings = defaultSettings;
+
+const url = settings.url;
+const regexes = settings.regexes.map(regex => ensureRegex(regex));
+const options = settings.options;
+
+const defaultTimerIntervalInMilliseconds = 30000;		// === 30 seconds.
+const timerIntervalInMilliseconds = settings.timerIntervalInMilliseconds || defaultTimerIntervalInMilliseconds;
 
 function padToTwoDigits(n) {
 	let str = '' + n;
@@ -94,45 +116,31 @@ function constructSpecialTimeOfDay(match) {
 }
 
 function sendHTTPRequest() {
-	const defaultSettings = {
-		url: "https://nodejs.org/en/",
-		regexes: [
-			/Download v{0,1}(\S+)\s+Current/
-		],
-		options: {
-			returnHttpResponseStatus: true
-		},
-		stringificationTemplate: [
-			"Current version of Node.js :",
-			0
-		]
-	};
-
-	const settings = require('./settings.json') || defaultSettings;
-	//const settings = defaultSettings;
-
-	const url = settings.url;
-	const regexes = settings.regexes.map(regex => ensureRegex(regex));
-	const options = settings.options;
-
 	matchRegexesInWebPage(url, regexes, options)
 		.then(result => {
-			ipc.send('consoleLog', `HTTP Response status: ${result.httpResponseStatusCode} ${result.httpResponseStatusMessage}`);
+			let nowAsString = new Date().toString();
+			const matchNowAsString = /^(.*[0-9])\s*\(/.exec(nowAsString);
+
+			if (matchNowAsString && matchNowAsString[1]) {
+				nowAsString = matchNowAsString[1];
+			}
+
+			ipcRenderer.send('consoleLog', `${nowAsString} HTTP Response status: ${result.httpResponseStatusCode} ${result.httpResponseStatusMessage}`);
 
 			let outputText = '';
 			let separator = '';
 			
 			settings.stringificationTemplate.forEach(st => {
-				// ipc.send('consoleLog', typeof st);
+				// ipcRenderer.send('consoleLog', typeof st);
 				let stringToAppend;
 				
 				if (typeof st === 'number' && st >= 0 && st < result.regexMatchResults.length) {
-					// ipc.send('consoleLog', 'st is a number');
-					// ipc.send('consoleLog', st);
-					// ipc.send('consoleLog', settings.specialTimeOfDayIndex);
+					// ipcRenderer.send('consoleLog', 'st is a number');
+					// ipcRenderer.send('consoleLog', st);
+					// ipcRenderer.send('consoleLog', settings.specialTimeOfDayIndex);
 					
 					if (st === settings.specialTimeOfDayIndex) {
-						// ipc.send('consoleLog', 'Calling constructSpecialTimeOfDay');
+						// ipcRenderer.send('consoleLog', 'Calling constructSpecialTimeOfDay');
 						stringToAppend = constructSpecialTimeOfDay(result.regexMatchResults[st].match);
 					} else {
 						stringToAppend = result.regexMatchResults[st].match.toString();
@@ -152,7 +160,7 @@ function sendHTTPRequest() {
 		})
 		.fail(error => {
 			document.getElementById('output').innerHTML = 'Error.';
-			ipc.send('consoleError', `${error.message || error}`);
+			ipcRenderer.send('consoleError', `${error.message || error}`);
 		})
 		.done();
 }
@@ -161,7 +169,7 @@ sendHTTPRequest();
 
 // Timers in Node.js : See https://nodejs.org/en/docs/guides/timers-in-node/
 
-const timerIntervalInMilliseconds = 30000;		// === 30 seconds.
+//const timerIntervalInMilliseconds = 30000;		// === 30 seconds.
 
 /* const intervalObj = */ setInterval(sendHTTPRequest, timerIntervalInMilliseconds);	// Execute sendHTTPRequest() once every 30 seconds.
 
