@@ -157,6 +157,17 @@ function sendHTTPRequest() {
 			});
 
 			document.getElementById('output').innerHTML = outputText;
+
+			let quoteDataForDatabase = {
+				symbol: settings.stringificationTemplate[0], //symbol,
+				quote: result.regexMatchResults[2].match, //quote,
+				percentChange: result.regexMatchResults[3].match, //percentChange,
+				bid: result.regexMatchResults[0].match, //bid,
+				ask: result.regexMatchResults[1].match, //ask,
+				quoteTime: result.regexMatchResults[4].match //quoteTime
+			};
+
+			ipcRenderer.send('insertQuoteIntoDatabase', quoteDataForDatabase);
 		})
 		.fail(error => {
 			document.getElementById('output').innerHTML = 'Error.';

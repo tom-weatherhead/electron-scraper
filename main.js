@@ -1,5 +1,6 @@
 // Modules to control application life and create native browser window
 const {app, BrowserWindow, ipcMain, Tray} = require('electron');
+//const sqlite3 = require('sqlite3').verbose();
 
 // See https://stackoverflow.com/questions/32780726/how-to-access-dom-elements-in-electron :
 
@@ -35,6 +36,109 @@ ipcMain.on('minimizeWindow', function(event, data) {
 	mainWindow.minimize();
 });
 
+/*
+function connectToDatabase() {
+	let db = new sqlite3.Database('./db/sqlite3database.db', (err) => {
+
+		if (err) {
+			console.error(err.message || err);
+		}
+
+		console.log('Connected to the SQLite3 database.');
+		
+		db.run('CREATE TABLE langs(name text)');
+
+		// Insert one row into the langs table
+		db.run(`INSERT INTO langs(name) VALUES(?)`, ['C'], function(err) {
+
+			if (err) {
+				return console.log(err.message);
+				db.close();
+			}
+
+			// get the last insert id
+			console.log(`A row has been inserted with rowid ${this.lastID}`);
+			db.close();
+		});
+
+		// db.close();
+	});
+}
+*/
+
+function connectToDatabase() {
+	const low = require('lowdb');
+	const FileSync = require('lowdb/adapters/FileSync');
+	 
+	const adapter = new FileSync('./db/lowdb.json');
+	const db = low(adapter);
+	 
+	// Set some defaults
+	db.defaults({ quotes: [], log: [] })
+		.write();
+
+	/*
+	// Add a post
+	db.get('posts')
+		.push({ id: 1, title: 'lowdb is awesome' })
+		.write();
+	 
+	// Set a user using Lodash shorthand syntax
+	db.set('user.name', 'typicode')
+		.write();
+	*/
+	
+	//db.close();
+}
+
+function insertQuoteIntoDatabase(symbol, quote, percentChange, bid, ask, quoteTime) {
+	const low = require('lowdb');
+	const FileSync = require('lowdb/adapters/FileSync');
+	 
+	const adapter = new FileSync('./db/lowdb.json');
+	const db = low(adapter);
+	const insertionTime = new Date();
+	 
+	// Add a post
+	db.get('quotes')
+		.push({ insertionTime: insertionTime, symbol: symbol, quote: quote, percentChange: percentChange, bid: bid, ask: ask, quoteTime: quoteTime })
+		.write();
+	
+	//db.close();
+}
+
+function logToDatabase(severity, message) {
+	const low = require('lowdb');
+	const FileSync = require('lowdb/adapters/FileSync');
+	 
+	const adapter = new FileSync('./db/lowdb.json');
+	const db = low(adapter);
+	const insertionTime = new Date();
+	 
+	// Add a post
+	db.get('log')
+		.push({ insertionTime: insertionTime, severity: severity, message: message })
+		.write();
+}
+
+function logErrorToDatabase(message) {
+	logToDatabase(0, message);
+}
+
+function logInfoToDatabase(message) {
+	logToDatabase(1, message);
+}
+
+ipcMain.on('logError', function(event, data) {
+	console.error(data);
+	functionLogErrorToDatabase(data);
+});
+
+ipcMain.on('logInfo', function(event, data) {
+	console.log(data);
+	functionLogInfoToDatabase(data);
+});
+
 ipcMain.on('consoleLog', function(event, data) {
 	console.log(data);
 });
@@ -43,10 +147,54 @@ ipcMain.on('consoleError', function(event, data) {
 	console.error(data);
 });
 
+ipcMain.on('insertQuoteIntoDatabase', function(event, data) {
+	insertQuoteIntoDatabase(data.symbol, data.quote, data.percentChange, data.bid, data.ask, data.quoteTime);
+});
+
+function padToTwoDigits(n) {
+	let str = '' + n;
+	
+	if (str.length < 2) {
+		str = '0' + str;
+	}
+	
+	return str;
+}
+
+function formatUTCDateWithoutTime(date) {
+    var year = date.getUTCFullYear(),
+        month = padToTwoDigits(date.getUTCMonth() + 1),
+        day = padToTwoDigits(date.getUTCDate());
+		
+	return [year, month, day].join('-');
+}
+
+function constructDateFromQuoteTimeOfDay(quoteTimeOfDayString) {
+	const timeRegexMatch = /[0-9]{1,2}\:[0-9]{2}[A|P]M [A-Z]+/.exec(quoteTimeOfDayString);
+	
+	if (!timeRegexMatch || !timeRegexMatch[0]) {
+		return undefined;
+	}
+
+	const now = new Date();
+	const timeAsString = formatUTCDateWithoutTime(now) + ' ' + timeRegexMatch[0].replace(/BST/, 'GMT+0100').replace(/AM/, ' AM').replace(/PM/, ' PM');
+	let time = new Date(timeAsString);
+	
+	time.setMinutes(time.getMinutes() - time.getTimezoneOffset());
+
+	return time;
+}
+
+ipcMain.on('constructDateFromQuoteTimeOfDay', function(event, data) {
+	const date = constructDateFromQuoteTimeOfDay(data);
+	
+    event.sender.send('actionReply_constructDateFromQuoteTimeOfDay', date);
+});
+
 function createWindow () {
-	const debug = true;
-	//const debug = false;
-	const windowWidth = debug ? 1000 : 350;
+	//const debug = true;
+	const debug = false;
+	const windowWidth = debug ? 1000 : 375;
 	const windowHeight = debug ? 500 : 32;
 
 	// 45 is an estimate of the height of the Windows taskbar.
@@ -105,6 +253,8 @@ function createWindow () {
 		tray.setHighlightMode('never');
 	});
 	*/
+	
+	connectToDatabase();
 }
 
 // This method will be called when Electron has finished
@@ -116,6 +266,7 @@ app.on('ready', createWindow);
 app.on('window-all-closed', function () {
 	// On OS X it is common for applications and their menu bar
 	// to stay active until the user quits explicitly with Cmd + Q
+
 	if (process.platform !== 'darwin') {
 		app.quit();
 	}
@@ -124,6 +275,7 @@ app.on('window-all-closed', function () {
 app.on('activate', function () {
 	// On OS X it's common to re-create a window in the app when the
 	// dock icon is clicked and there are no other windows open.
+
 	if (mainWindow === null) {
 		createWindow();
 	}
