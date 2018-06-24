@@ -1,0 +1,20 @@
+{
+	"descriptors": [
+		{
+			"url": "https://nodejs.org/en/",
+			"regexes": [
+				"/Download v{0,1}(\\S+)\\s+Current/"
+			],
+			"mapRegexIndexToDatabaseTableColumnName": [],
+			"options": {
+				"returnHttpResponseStatus": true
+			},
+			"label": "Node.js current version",
+			"stringificationTemplate": [
+				0
+			]
+		}
+	],
+	"timerIntervalInMilliseconds": 60000,
+	"logSuccessfulHttpRequests": false
+}

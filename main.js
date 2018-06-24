@@ -1,6 +1,27 @@
-// Modules to control application life and create native browser window
-const {app, BrowserWindow, ipcMain, Tray} = require('electron');
-//const sqlite3 = require('sqlite3').verbose();
+// electron-scraper/main.js
+
+// Modules to control the application lifecycle and to create a native browser window:
+const { app, BrowserWindow, globalShortcut, ipcMain, Tray } = require('electron');
+
+const low = require('lowdb');
+const FileSync = require('lowdb/adapters/FileSync');
+
+const lowDB_databaseFilePath = './db/lowdb.json';
+const adapter = new FileSync(lowDB_databaseFilePath);
+const db = low(adapter);
+
+//const utilities = require('./utilities.js');
+
+const debug = true;
+//const debug = false;
+
+const logSeverity_Error = 0;
+const logSeverity_Info = 1;
+
+// Keep a global reference of the window object. If you don't, the window will
+// be closed automatically when the JavaScript object is garbage collected.
+let mainWindow;
+let tray;
 
 // See https://stackoverflow.com/questions/32780726/how-to-access-dom-elements-in-electron :
 
@@ -26,183 +47,193 @@ ipc.on('invokeAction', function(event, data){
 });
 */
 
-// Keep a global reference of the window object. If you don't, the window will
-// be closed automatically when the JavaScript object is garbage collected.
-let mainWindow;
-
-ipcMain.on('minimizeWindow', function(event, data) {
-    // var result = processData(data);
-    // event.sender.send('actionReply', result);
-	mainWindow.minimize();
-});
+const defaultSettings = {
+	descriptors: [
+		{
+			url: 'https://nodejs.org/en/',
+			regexes: [
+				/Download v{0,1}(\S+)\s+Current/
+			],
+			mapRegexIndexToDatabaseTableColumnName: [],
+			options: {
+				returnHttpResponseStatus: true
+			},
+			label: 'Current version of Node.js :',
+			stringificationTemplate: [
+				0
+			]
+		}
+	],
+	timerIntervalInMilliseconds: 60000,
+	logSuccessfulHttpRequests: false
+};
 
 /*
-function connectToDatabase() {
-	let db = new sqlite3.Database('./db/sqlite3database.db', (err) => {
-
-		if (err) {
-			console.error(err.message || err);
-		}
-
-		console.log('Connected to the SQLite3 database.');
-		
-		db.run('CREATE TABLE langs(name text)');
-
-		// Insert one row into the langs table
-		db.run(`INSERT INTO langs(name) VALUES(?)`, ['C'], function(err) {
-
-			if (err) {
-				return console.log(err.message);
-				db.close();
+function constructHttpErrorCodeTestSettings (httpStatusCode) {
+	return {
+		descriptors: [
+			{
+				url: `https://httpbin.org/status/${httpStatusCode}`,
+				regexes: defaultSettings.descriptors[0].regexes,
+				mapRegexIndexToDatabaseTableColumnName: defaultSettings.descriptors[0].mapRegexIndexToDatabaseTableColumnName,
+				options: defaultSettings.descriptors[0].options,
+				label: defaultSettings.descriptors[0].label,
+				stringificationTemplate: defaultSettings.descriptors[0].stringificationTemplate
 			}
-
-			// get the last insert id
-			console.log(`A row has been inserted with rowid ${this.lastID}`);
-			db.close();
-		});
-
-		// db.close();
-	});
+		],
+		timerIntervalInMilliseconds: defaultSettings.timerIntervalInMilliseconds,
+		logSuccessfulHttpRequests: defaultSettings.logSuccessfulHttpRequests
+	};
 }
 */
 
-function connectToDatabase() {
-	const low = require('lowdb');
-	const FileSync = require('lowdb/adapters/FileSync');
-	 
-	const adapter = new FileSync('./db/lowdb.json');
-	const db = low(adapter);
-	 
-	// Set some defaults
-	db.defaults({ quotes: [], log: [] })
-		.write();
+const settings = require('./settings.json') || defaultSettings;
+//const settings = require('./settings.example.json') || defaultSettings;
+//const settings = defaultSettings;
+//const settings = constructHttpErrorCodeTestSettings(500);
+//const settings = constructHttpErrorCodeTestSettings(403);
 
-	/*
-	// Add a post
-	db.get('posts')
-		.push({ id: 1, title: 'lowdb is awesome' })
+ipcMain.on('getSettings', function (event) {
+	event.sender.send('actionReply_getSettings', settings);
+});
+
+ipcMain.on('minimizeWindow', () => { //function (event, data) {
+	// var result = processData(data);
+	// event.sender.send('actionReply', result);
+	mainWindow.minimize();
+});
+
+function connectToDatabase () {
+	// const adapter = new FileSync(lowDB_databaseFilePath);
+	//const db = low(adapter);
+
+	// Set some defaults
+	db.defaults({ quotes: [], log: [], httpErrors: [] })
 		.write();
-	 
-	// Set a user using Lodash shorthand syntax
-	db.set('user.name', 'typicode')
-		.write();
-	*/
-	
-	//db.close();
 }
 
-function insertQuoteIntoDatabase(symbol, quote, percentChange, bid, ask, quoteTime) {
-	const low = require('lowdb');
-	const FileSync = require('lowdb/adapters/FileSync');
-	 
-	const adapter = new FileSync('./db/lowdb.json');
-	const db = low(adapter);
+function insertQuoteIntoDatabase (symbol, quote, percentChange, bid, ask, quoteTimeAsUTCDateTime, quoteTimeInLocalTimezone) {
+	//const adapter = new FileSync(lowDB_databaseFilePath);
+	// const db = low(adapter);
 	const insertionTime = new Date();
-	 
+
 	// Add a post
 	db.get('quotes')
-		.push({ insertionTime: insertionTime, symbol: symbol, quote: quote, percentChange: percentChange, bid: bid, ask: ask, quoteTime: quoteTime })
+		.push({ insertionTime: insertionTime, symbol: symbol, quote: quote, percentChange: percentChange, bid: bid, ask: ask, quoteTimeAsUTCDateTime: quoteTimeAsUTCDateTime, quoteTimeInLocalTimezone: quoteTimeInLocalTimezone })
 		.write();
-	
-	//db.close();
 }
 
-function logToDatabase(severity, message) {
-	const low = require('lowdb');
-	const FileSync = require('lowdb/adapters/FileSync');
-	 
-	const adapter = new FileSync('./db/lowdb.json');
-	const db = low(adapter);
+function logToDatabase (severity, message) {
+	//const adapter = new FileSync(lowDB_databaseFilePath);
+	//const db = low(adapter);
 	const insertionTime = new Date();
-	 
+
 	// Add a post
 	db.get('log')
 		.push({ insertionTime: insertionTime, severity: severity, message: message })
 		.write();
 }
 
-function logErrorToDatabase(message) {
-	logToDatabase(0, message);
+function logHttpErrorToDatabase (url, statusCode, statusMessage) {
+	//const adapter = new FileSync(lowDB_databaseFilePath);
+	//const db = low(adapter);
+	const insertionTime = new Date();
+
+	// Add a post
+	db.get('httpErrors')
+		.push({ insertionTime: insertionTime, url: url, statusCode: statusCode, statusMessage: statusMessage })
+		.write();
 }
 
-function logInfoToDatabase(message) {
-	logToDatabase(1, message);
+function logErrorToDatabase (message) {
+	logToDatabase(logSeverity_Error, message);
 }
 
-ipcMain.on('logError', function(event, data) {
+function logInfoToDatabase (message) {
+	logToDatabase(logSeverity_Info, message);
+}
+
+ipcMain.on('logError', function (event, data) {
 	console.error(data);
-	functionLogErrorToDatabase(data);
+	logErrorToDatabase(data);
 });
 
-ipcMain.on('logInfo', function(event, data) {
+ipcMain.on('logHttpRequestError', function (event, data) {
+	const errorMessage = `Error: GET ${data.url} : HTTP Response status: ${data.httpResponseStatusCode} ${data.httpResponseStatusMessage}`;
+
+	console.error(errorMessage);
+	logHttpErrorToDatabase(data.url, data.httpResponseStatusCode, data.httpResponseStatusMessage);
+});
+
+ipcMain.on('logInfo', function (event, data) {
 	console.log(data);
-	functionLogInfoToDatabase(data);
+	logInfoToDatabase(data);
 });
 
-ipcMain.on('consoleLog', function(event, data) {
+function consoleLogForDebugOnly (data) {
+
+	if (debug) {
+		console.log(data);
+	}
+}
+
+ipcMain.on('consoleLog', function (event, data) {
 	console.log(data);
 });
 
-ipcMain.on('consoleError', function(event, data) {
+ipcMain.on('consoleLogForDebugOnly', function (event, data) {
+	consoleLogForDebugOnly(data);
+});
+
+ipcMain.on('consoleError', function (event, data) {
 	console.error(data);
 });
 
-ipcMain.on('insertQuoteIntoDatabase', function(event, data) {
-	insertQuoteIntoDatabase(data.symbol, data.quote, data.percentChange, data.bid, data.ask, data.quoteTime);
+ipcMain.on('insertQuoteIntoDatabase', function (event, data) {
+	insertQuoteIntoDatabase(data.symbol, data.quote, data.percentChange, data.bid, data.ask, data.quoteTimeAsUTCDateTime, data.quoteTimeInLocalTimezone);
 });
 
-function padToTwoDigits(n) {
-	let str = '' + n;
-	
-	if (str.length < 2) {
-		str = '0' + str;
-	}
-	
-	return str;
-}
+/*
+function constructDateFromQuoteTimeOfDay (quoteTimeOfDayString) {
+	let time = utilities.guesstimateQuoteTimeAsUTCDateTime(quoteTimeOfDayString);
 
-function formatUTCDateWithoutTime(date) {
-    var year = date.getUTCFullYear(),
-        month = padToTwoDigits(date.getUTCMonth() + 1),
-        day = padToTwoDigits(date.getUTCDate());
-		
-	return [year, month, day].join('-');
-}
-
-function constructDateFromQuoteTimeOfDay(quoteTimeOfDayString) {
-	const timeRegexMatch = /[0-9]{1,2}\:[0-9]{2}[A|P]M [A-Z]+/.exec(quoteTimeOfDayString);
-	
-	if (!timeRegexMatch || !timeRegexMatch[0]) {
-		return undefined;
-	}
-
-	const now = new Date();
-	const timeAsString = formatUTCDateWithoutTime(now) + ' ' + timeRegexMatch[0].replace(/BST/, 'GMT+0100').replace(/AM/, ' AM').replace(/PM/, ' PM');
-	let time = new Date(timeAsString);
-	
 	time.setMinutes(time.getMinutes() - time.getTimezoneOffset());
 
 	return time;
 }
 
-ipcMain.on('constructDateFromQuoteTimeOfDay', function(event, data) {
+ipcMain.on('constructDateFromQuoteTimeOfDay', function (event, data) {
 	const date = constructDateFromQuoteTimeOfDay(data);
-	
-    event.sender.send('actionReply_constructDateFromQuoteTimeOfDay', date);
+
+	event.sender.send('actionReply_constructDateFromQuoteTimeOfDay', date);
 });
+*/
+
+function getNonDebugWindowHeight () {
+	const descriptors = settings.descriptors || [];
+	const numDescriptors = descriptors.length || 1;
+
+	return numDescriptors * 32;
+}
 
 function createWindow () {
-	//const debug = true;
-	const debug = false;
+	consoleLogForDebugOnly('createWindow() : BEGIN');
+
 	const windowWidth = debug ? 1000 : 375;
-	const windowHeight = debug ? 500 : 32;
+	//const windowHeight = debug ? 500 : 32;
+	//const windowHeight = debug ? 500 : 64;
+	const windowHeight = debug ? 500 : getNonDebugWindowHeight();
 
 	// 45 is an estimate of the height of the Windows taskbar.
 	// -> 40px ? See https://www.reddit.com/r/Windows10/comments/6rv7ot/on_a_1920x1080_display_at_native_resolution_how/
 	const windows10TaskbarHeight = 40;
 
 	// Create the browser window:
-	mainWindow = new BrowserWindow({width: windowWidth, height: windowHeight, frame: false});
+	mainWindow = new BrowserWindow({
+		width: windowWidth,
+		height: windowHeight,
+		frame: debug
+	});
 
 	// ... and load the index.html of the app.
 	mainWindow.loadFile('index.html');
@@ -214,11 +245,22 @@ function createWindow () {
 
 	// Emitted when the window is closed.
 	mainWindow.on('closed', function () {
+		consoleLogForDebugOnly('mainWindow.on(\'closed\')');
 		// Dereference the window object. Usually you would store windows
 		// in an array if your app supports multiple windows. This is the time
 		// when you should delete the corresponding elements.
 		mainWindow = null;
 	});
+
+	/*
+	mainWindow.on('window-all-closed', () => {
+		consoleLogForDebugOnly('mainWindow.on(\'window-all-closed\')');
+	});
+
+	mainWindow.on('blur', () => {
+		consoleLogForDebugOnly('mainWindow.on(\'blur\')');
+	});
+	*/
 
 	const screenDimensions = require('electron').screen.getPrimaryDisplay().size;
 	//const screenDimensions = require('electron').screen.getCurrentDisplay().size;	// Error: getCurrentDisplay is not a function.
@@ -228,11 +270,21 @@ function createWindow () {
 	mainWindow.setPosition(screenDimensions.width - windowWidth, screenDimensions.height - windowHeight - windows10TaskbarHeight);
 
 	// For best results on Windows, use an .ico file. See https://electronjs.org/docs/api/tray .
-	const tray = new Tray('./assets/favicon.ico');
+	tray = new Tray('./assets/favicon.ico');
 
 	tray.on('click', () => {
-		mainWindow.isVisible() ? mainWindow.hide() : mainWindow.show();
+		consoleLogForDebugOnly('tray.on(\'click\')');
+
+		if (mainWindow.isVisible()) {
+			mainWindow.hide();
+		} else {
+			mainWindow.show();
+		}
 	});
+
+	// TODO: Call tray.destroy() when the app is shutting down in order to remove the icon from the system tray
+	// See https://electronjs.org/docs/api/tray
+	// See https://github.com/electron/electron/commit/f6c66a737498223933d0a34c3113515cc6284f74
 
 	/* These two Tray events are available on macOS only.
 	tray.on('mouse-enter', () => {
@@ -253,26 +305,50 @@ function createWindow () {
 		tray.setHighlightMode('never');
 	});
 	*/
-	
+
 	connectToDatabase();
+
+	/*
+	if (process.platform === 'win32') {
+		consoleLogForDebugOnly('process.platform === \'win32\'; readline...');
+
+		const rl = require('readline').createInterface({
+			input: process.stdin,
+			output: process.stdout
+		});
+
+		rl.on('SIGINT', function () {
+			consoleLogForDebugOnly('process.emit(\'SIGINT\')');
+			process.emit('SIGINT');
+		});
+	}
+
+	process.on('SIGINT', function () {
+		// Graceful shutdown
+		consoleLogForDebugOnly('process.on(\'SIGINT\') ; Graceful shutdown...');
+		process.exit();
+	});
+	*/
+
+	// Use a global keyboard shortcut to shut down the app.
+	// See https://github.com/electron/electron/blob/master/docs/tutorial/keyboard-shortcuts.md#global-shortcuts
+
+	globalShortcut.register('CommandOrControl+X', () => {
+		consoleLogForDebugOnly('CommandOrControl+X is pressed');
+
+		// On OS X it is common for applications and their menu bar
+		// to stay active until the user quits explicitly with Cmd + Q
+
+		if (process.platform !== 'darwin') {
+			app.quit();
+		}
+	});
+
+	consoleLogForDebugOnly('createWindow() : END');
 }
 
-// This method will be called when Electron has finished
-// initialization and is ready to create browser windows.
-// Some APIs can only be used after this event occurs.
-app.on('ready', createWindow);
-
-// Quit when all windows are closed.
-app.on('window-all-closed', function () {
-	// On OS X it is common for applications and their menu bar
-	// to stay active until the user quits explicitly with Cmd + Q
-
-	if (process.platform !== 'darwin') {
-		app.quit();
-	}
-});
-
 app.on('activate', function () {
+	consoleLogForDebugOnly('app.on(\'activate\')');
 	// On OS X it's common to re-create a window in the app when the
 	// dock icon is clicked and there are no other windows open.
 
@@ -281,5 +357,81 @@ app.on('activate', function () {
 	}
 });
 
+// This method will be called when Electron has finished
+// initialization and is ready to create browser windows.
+// Some APIs can only be used after this event occurs.
+app.on('ready', createWindow);
+
+// Quit when all windows are closed.
+app.on('window-all-closed', function () {
+	consoleLogForDebugOnly('app.on(\'window-all-closed\')');
+
+	// On OS X it is common for applications and their menu bar
+	// to stay active until the user quits explicitly with Cmd + Q
+
+	if (process.platform !== 'darwin') {
+		app.quit();
+	}
+});
+
+/*
+app.on('before-quit', () => {
+	consoleLogForDebugOnly('app.on(\'before-quit\')');
+
+	if (tray) {
+		tray.destroy();
+		tray = null;
+	}
+});
+
+app.on('will-quit', () => {
+	consoleLogForDebugOnly('app.on(\'will-quit\')');
+
+	if (tray) {
+		tray.destroy();
+		tray = null;
+	}
+});
+*/
+
+app.on('quit', () => {
+	consoleLogForDebugOnly('app.on(\'quit\')');
+
+	if (tray) {
+		tray.destroy();		// This removes our application's icon from the system tray.
+		tray = null;
+	}
+});
+
 // In this file you can include the rest of your app's specific main process
 // code. You can also put them in separate files and require them here.
+
+// TODO: Detect Ctrl-C on Windows, and call tray.destroy() when CTRL-C is pressed.
+// See https://stackoverflow.com/questions/10021373/what-is-the-windows-equivalent-of-process-onsigint-in-node-js
+// See also https://nodejs.org/api/readline.html#readline_event_sigint
+
+/*
+if (process.platform === "win32") {
+  var rl = require("readline").createInterface({
+    input: process.stdin,
+    output: process.stdout
+  });
+
+  rl.on("SIGINT", function () {
+    process.emit("SIGINT");
+  });
+}
+
+process.on("SIGINT", function () {
+  //graceful shutdown
+  process.exit();
+});
+*/
+
+/*
+process.on('SIGINT', () => {
+	consoleLogForDebugOnly('SIGINT');
+});
+*/
+
+// TODO: Consider using https://www.npmjs.com/package/async-exit-hook to catch Ctrl-C on Windows and/or unhandled exceptions on any platform.

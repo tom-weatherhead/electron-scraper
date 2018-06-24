@@ -1,3 +1,5 @@
+// electron-scraper/renderer.js
+
 // This file is required by the index.html file and will be executed in the renderer process for that window.
 // All of the Node.js APIs are available in this process.
 
@@ -5,183 +7,140 @@ const { ipcRenderer /*, remote */ } = require('electron');
 
 const matchRegexesInWebPage = require('http-get-regex-capture');
 
-const defaultSettings = {
-	url: "https://nodejs.org/en/",
-	regexes: [
-		/Download v{0,1}(\S+)\s+Current/
-	],
-	options: {
-		returnHttpResponseStatus: true
-	},
-	stringificationTemplate: [
-		"Current version of Node.js :",
-		0
-	]
-};
-
-const settings = require('./settings.json') || defaultSettings;
-//const settings = defaultSettings;
-
-const url = settings.url;
-const regexes = settings.regexes.map(regex => ensureRegex(regex));
-const options = settings.options;
+const utilities = require('./utilities.js');
 
 const defaultTimerIntervalInMilliseconds = 30000;		// === 30 seconds.
-const timerIntervalInMilliseconds = settings.timerIntervalInMilliseconds || defaultTimerIntervalInMilliseconds;
 
-function padToTwoDigits(n) {
-	let str = '' + n;
-	
-	if (str.length < 2) {
-		str = '0' + str;
-	}
-	
-	return str;
-}
+let settings;
+let logSuccessfulHttpRequests;
+let timerIntervalInMilliseconds;
 
-function formatUTCDateWithoutTime(date) {
-    var year = date.getUTCFullYear(),
-        month = padToTwoDigits(date.getUTCMonth() + 1),
-        day = padToTwoDigits(date.getUTCDate());
-		
-	return [year, month, day].join('-');
-}
+function constructSpecialTimeOfDayFromUTCTime (time) {
 
-function formatUTCHoursAndMinutes(date) {
-	const hours = padToTwoDigits(date.getUTCHours());
-	const minutes = padToTwoDigits(date.getUTCMinutes())
-	
-	return `${hours}:${minutes}`;
-}
-
-/*
-function formatDate(date) {
-    //var d = new Date(date),
-    var d = date,
-        year = d.getFullYear(),
-        month = padToTwoDigits(d.getMonth() + 1),
-        day = padToTwoDigits(d.getDate()),
-		hour = padToTwoDigits(d.getHours()),
-		minute = padToTwoDigits(d.getMinutes()),
-		second = padToTwoDigits(d.getSeconds());
-		
-	return [year, month, day].join('-') + ' ' + [hour, minute, second].join(':');
-}
-
-function formatUTCDate(date) {
-    const hour = padToTwoDigits(date.getUTCHours()),
-		minute = padToTwoDigits(date.getUTCMinutes()),
-		second = padToTwoDigits(date.getUTCSeconds());
-		
-	return formatUTCDateWithoutTime(date) + ' ' + [hour, minute, second].join(':');
-}
-*/
-
-function ensureRegex(param) {
-	const prototypeAsString = Object.prototype.toString.call(param);
-
-	switch (prototypeAsString) {
-		case '[object RegExp]':
-			return param;
-
-		case '[object String]':
-			// Strip the leading and trailing slashes (if any) from param
-			const match = /^\/(.*)\/$/.exec(param);
-			
-			if (match && match.length && match[1]) {
-				param = match[1];
-			}
-
-			return new RegExp(param);
-
-		default:
-			return undefined;
-	}
-}
-
-function constructSpecialTimeOfDay(match) {
-	//const timeRegexMatch = match.match(/[0-9]{1,2}\:[0-9]{2}[A|P]M [A-Z]+/);
-	const timeRegexMatch = /[0-9]{1,2}\:[0-9]{2}[A|P]M [A-Z]+/.exec(match);
-	
-	if (!timeRegexMatch || !timeRegexMatch[0]) {
-		return undefined;
+	if (!time) {
+		return '';
 	}
 
-	const now = new Date();
-	const timeAsString = formatUTCDateWithoutTime(now) + ' ' + timeRegexMatch[0].replace(/BST/, 'GMT+0100').replace(/AM/, ' AM').replace(/PM/, ' PM');
-	let time = new Date(timeAsString);
-	
-	time.setMinutes(time.getMinutes() - time.getTimezoneOffset());
-	return formatUTCHoursAndMinutes(time);
+	let copyOfTime = new Date(time);
+
+	copyOfTime.setMinutes(copyOfTime.getMinutes() - copyOfTime.getTimezoneOffset());
+
+	return utilities.formatUTCHoursAndMinutes(copyOfTime);
 }
 
-function sendHTTPRequest() {
-	matchRegexesInWebPage(url, regexes, options)
-		.then(result => {
-			let nowAsString = new Date().toString();
-			const matchNowAsString = /^(.*[0-9])\s*\(/.exec(nowAsString);
+function logHttpRequestError (url, statusCode, statusMessage) {
+	ipcRenderer.send('logHttpRequestError', {
+		url: url,
+		httpResponseStatusCode: statusCode,
+		httpResponseStatusMessage: statusMessage
+	});
+}
 
-			if (matchNowAsString && matchNowAsString[1]) {
-				nowAsString = matchNowAsString[1];
-			}
+function sendHTTPRequest () {
+	settings.descriptors.forEach((descriptor, i) => {
+		const url = descriptor.url;
+		const rawRegexes = descriptor.regexes || settings.descriptors[0].regexes;
+		const regexes = rawRegexes.map(regex => utilities.ensureRegex(regex));
+		const mapRegexIndexToDatabaseTableColumnName = descriptor.mapRegexIndexToDatabaseTableColumnName || settings.descriptors[0].mapRegexIndexToDatabaseTableColumnName || [];
+		const options = descriptor.options || settings.descriptors[0].options;
+		const label = descriptor.label || settings.descriptors[0].label || '';
+		const stringificationTemplate = descriptor.stringificationTemplate || settings.descriptors[0].stringificationTemplate || [];
+		const specialTimeOfDayIndex = descriptor.specialTimeOfDayIndex || settings.descriptors[0].specialTimeOfDayIndex;
 
-			ipcRenderer.send('consoleLog', `${nowAsString} HTTP Response status: ${result.httpResponseStatusCode} ${result.httpResponseStatusMessage}`);
+		matchRegexesInWebPage(url, regexes, options)
+			.then(result => {
 
-			let outputText = '';
-			let separator = '';
-			
-			settings.stringificationTemplate.forEach(st => {
-				// ipcRenderer.send('consoleLog', typeof st);
-				let stringToAppend;
-				
-				if (typeof st === 'number' && st >= 0 && st < result.regexMatchResults.length) {
-					// ipcRenderer.send('consoleLog', 'st is a number');
-					// ipcRenderer.send('consoleLog', st);
-					// ipcRenderer.send('consoleLog', settings.specialTimeOfDayIndex);
-					
-					if (st === settings.specialTimeOfDayIndex) {
-						// ipcRenderer.send('consoleLog', 'Calling constructSpecialTimeOfDay');
-						stringToAppend = constructSpecialTimeOfDay(result.regexMatchResults[st].match);
+				if (result.httpResponseStatusCode !== 200) {
+					logHttpRequestError(url, result.httpResponseStatusCode, result.httpResponseStatusMessage);
+
+					return;
+				} else if (logSuccessfulHttpRequests) {
+					ipcRenderer.send('logInfo', `HTTP Response status: ${result.httpResponseStatusCode} ${result.httpResponseStatusMessage}`);
+				}
+
+				let outputText = label ? `${label} ` : '';
+				let separator = '';
+				let quoteTimeAsUTCDateTime;
+
+				if (utilities.isObjectAValidNonNegativeIntegerLessThanN(specialTimeOfDayIndex, result.regexMatchResults.length)) {
+					const quoteTimeRegexMatch = result.regexMatchResults[specialTimeOfDayIndex].match;
+
+					if (quoteTimeRegexMatch) {
+						quoteTimeAsUTCDateTime = utilities.guesstimateQuoteTimeAsUTCDateTime(quoteTimeRegexMatch);
+					}
+				}
+
+				stringificationTemplate.forEach(st => {
+					let stringToAppend;
+
+					if (!utilities.isObjectAValidNonNegativeIntegerLessThanN(st, result.regexMatchResults.length)) {
+						stringToAppend = st.toString();
+					} else if (st === specialTimeOfDayIndex) {
+						stringToAppend = constructSpecialTimeOfDayFromUTCTime(quoteTimeAsUTCDateTime);
 					} else {
 						stringToAppend = result.regexMatchResults[st].match.toString();
 					}
+
+					if (stringToAppend) {
+						outputText = outputText + separator + stringToAppend;
+					}
+
+					separator = ' ';
+				});
+
+				document.getElementById(`output${i}`).innerHTML = outputText;
+
+				ipcRenderer.send('consoleLog', outputText);
+
+				let quoteDataForDatabase = {};
+
+				if (stringificationTemplate && stringificationTemplate.length) {
+					quoteDataForDatabase.symbol = label;
+				}
+
+				if (quoteTimeAsUTCDateTime) {
+					quoteDataForDatabase.quoteTimeAsUTCDateTime = quoteTimeAsUTCDateTime;
+				}
+
+				if (!mapRegexIndexToDatabaseTableColumnName || !mapRegexIndexToDatabaseTableColumnName.length) {
+					ipcRenderer.send('consoleLog', 'Not inserting into database.');
 				} else {
-					stringToAppend = st.toString();
+					mapRegexIndexToDatabaseTableColumnName.forEach((columnName, j) => {
+
+						if (j === specialTimeOfDayIndex) {
+							quoteDataForDatabase[columnName] = utilities.dateToSimpleLocalDateTimeWithTimeZone(quoteTimeAsUTCDateTime);
+						} else {
+							quoteDataForDatabase[columnName] = result.regexMatchResults[j].match || '';
+						}
+					});
+
+					ipcRenderer.send('consoleLog', 'Inserting into database...');
+					ipcRenderer.send('insertQuoteIntoDatabase', quoteDataForDatabase);
 				}
-				
-				if (stringToAppend) {
-					outputText = outputText + separator + stringToAppend;
-				}
-
-				separator = ' ';
-			});
-
-			document.getElementById('output').innerHTML = outputText;
-
-			let quoteDataForDatabase = {
-				symbol: settings.stringificationTemplate[0], //symbol,
-				quote: result.regexMatchResults[2].match, //quote,
-				percentChange: result.regexMatchResults[3].match, //percentChange,
-				bid: result.regexMatchResults[0].match, //bid,
-				ask: result.regexMatchResults[1].match, //ask,
-				quoteTime: result.regexMatchResults[4].match //quoteTime
-			};
-
-			ipcRenderer.send('insertQuoteIntoDatabase', quoteDataForDatabase);
-		})
-		.fail(error => {
-			document.getElementById('output').innerHTML = 'Error.';
-			ipcRenderer.send('consoleError', `${error.message || error}`);
-		})
-		.done();
+			})
+			.fail(error => {
+				// TODO: Log the error to the database.
+				document.getElementById(`output${i}`).innerHTML = 'Error.';
+				ipcRenderer.send('consoleError', `${error.message || error}`);
+			})
+			.done();
+	});
 }
 
-sendHTTPRequest();
+ipcRenderer.once('actionReply_getSettings', function (event, response) {
+	settings = response || {};
 
-// Timers in Node.js : See https://nodejs.org/en/docs/guides/timers-in-node/
+	logSuccessfulHttpRequests = settings.logSuccessfulHttpRequests === true || settings.logSuccessfulHttpRequests === false ? settings.logSuccessfulHttpRequests : true;
 
-//const timerIntervalInMilliseconds = 30000;		// === 30 seconds.
+	timerIntervalInMilliseconds = settings.timerIntervalInMilliseconds || defaultTimerIntervalInMilliseconds;
 
-/* const intervalObj = */ setInterval(sendHTTPRequest, timerIntervalInMilliseconds);	// Execute sendHTTPRequest() once every 30 seconds.
+	sendHTTPRequest();
 
-//clearInterval(intervalObj);	// This cancels the infinite loop in the setInterval() above.
+	// Timers in Node.js : See https://nodejs.org/en/docs/guides/timers-in-node/
+
+	/* const intervalObj = */ setInterval(sendHTTPRequest, timerIntervalInMilliseconds);	// Execute sendHTTPRequest() once every 30 seconds.
+
+	//clearInterval(intervalObj);	// This cancels the infinite loop in the setInterval() above.
+});
+
+ipcRenderer.send('getSettings');
