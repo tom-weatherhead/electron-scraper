@@ -3,20 +3,12 @@
 // Modules to control the application lifecycle and to create a native browser window:
 const { app, BrowserWindow, globalShortcut, ipcMain, Tray } = require('electron');
 
-const low = require('lowdb');
-const FileSync = require('lowdb/adapters/FileSync');
-
-const lowDB_databaseFilePath = 'database/lowdb.json';
-const adapter = new FileSync(lowDB_databaseFilePath);
-const db = low(adapter);
-
+const database = require('../database/lowdb.js');
+const settings = require('../settings.js');
 //const utilities = require('../utilities.js');
 
 const debug = true;
 //const debug = false;
-
-const logSeverity_Error = 0;
-const logSeverity_Info = 1;
 
 // Keep a global reference of the window object. If you don't, the window will
 // be closed automatically when the JavaScript object is garbage collected.
@@ -47,8 +39,6 @@ ipc.on('invokeAction', function(event, data){
 });
 */
 
-const settings = require('../settings.js');
-
 ipcMain.on('getSettings', function (event) {
 	event.sender.send('actionReply_getSettings', settings);
 });
@@ -59,71 +49,19 @@ ipcMain.on('minimizeWindow', () => { //function (event, data) {
 	mainWindow.minimize();
 });
 
-function connectToDatabase () {
-	// const adapter = new FileSync(lowDB_databaseFilePath);
-	//const db = low(adapter);
-
-	// Set some defaults
-	db.defaults({ quotes: [], log: [], httpErrors: [] })
-		.write();
-}
-
-function insertQuoteIntoDatabase (symbol, quote, percentChange, bid, ask, quoteTimeAsUTCDateTime, quoteTimeInLocalTimezone) {
-	//const adapter = new FileSync(lowDB_databaseFilePath);
-	// const db = low(adapter);
-	const insertionTime = new Date();
-
-	// Add a post
-	db.get('quotes')
-		.push({ insertionTime: insertionTime, symbol: symbol, quote: quote, percentChange: percentChange, bid: bid, ask: ask, quoteTimeAsUTCDateTime: quoteTimeAsUTCDateTime, quoteTimeInLocalTimezone: quoteTimeInLocalTimezone })
-		.write();
-}
-
-function logToDatabase (severity, message) {
-	//const adapter = new FileSync(lowDB_databaseFilePath);
-	//const db = low(adapter);
-	const insertionTime = new Date();
-
-	// Add a post
-	db.get('log')
-		.push({ insertionTime: insertionTime, severity: severity, message: message })
-		.write();
-}
-
-function logHttpErrorToDatabase (url, statusCode, statusMessage) {
-	//const adapter = new FileSync(lowDB_databaseFilePath);
-	//const db = low(adapter);
-	const insertionTime = new Date();
-
-	// Add a post
-	db.get('httpErrors')
-		.push({ insertionTime: insertionTime, url: url, statusCode: statusCode, statusMessage: statusMessage })
-		.write();
-}
-
-function logErrorToDatabase (message) {
-	logToDatabase(logSeverity_Error, message);
-}
-
-function logInfoToDatabase (message) {
-	logToDatabase(logSeverity_Info, message);
-}
-
 ipcMain.on('logError', function (event, data) {
 	console.error(data);
-	logErrorToDatabase(data);
-});
-
-ipcMain.on('logHttpRequestError', function (event, data) {
-	const errorMessage = `Error: GET ${data.url} : HTTP Response status: ${data.httpResponseStatusCode} ${data.httpResponseStatusMessage}`;
-
-	console.error(errorMessage);
-	logHttpErrorToDatabase(data.url, data.httpResponseStatusCode, data.httpResponseStatusMessage);
+	database.logError(data);
 });
 
 ipcMain.on('logInfo', function (event, data) {
 	console.log(data);
-	logInfoToDatabase(data);
+	database.logInfo(data);
+});
+
+ipcMain.on('logHttpRequestError', function (event, data) {
+	console.error(`Error: GET ${data.url} : HTTP Response status: ${data.httpResponseStatusCode} ${data.httpResponseStatusMessage}`);
+	database.logHttpError(data.url, data.httpResponseStatusCode, data.httpResponseStatusMessage);
 });
 
 function consoleLogForDebugOnly (data) {
@@ -146,7 +84,7 @@ ipcMain.on('consoleError', function (event, data) {
 });
 
 ipcMain.on('insertQuoteIntoDatabase', function (event, data) {
-	insertQuoteIntoDatabase(data.symbol, data.quote, data.percentChange, data.bid, data.ask, data.quoteTimeAsUTCDateTime, data.quoteTimeInLocalTimezone);
+	database.insertQuote(data.symbol, data.quote, data.percentChange, data.bid, data.ask, data.quoteTimeAsUTCDateTime, data.quoteTimeInLocalTimezone);
 });
 
 /*
@@ -191,7 +129,7 @@ function createWindow () {
 		frame: debug
 	});
 
-	// ... and load the index.html of the app.
+	// ... and load the app window's index.html
 	mainWindow.loadFile('src/window/index.html');
 
 	if (debug) {
@@ -207,16 +145,6 @@ function createWindow () {
 		// when you should delete the corresponding elements.
 		mainWindow = null;
 	});
-
-	/*
-	mainWindow.on('window-all-closed', () => {
-		consoleLogForDebugOnly('mainWindow.on(\'window-all-closed\')');
-	});
-
-	mainWindow.on('blur', () => {
-		consoleLogForDebugOnly('mainWindow.on(\'blur\')');
-	});
-	*/
 
 	const screenDimensions = require('electron').screen.getPrimaryDisplay().size;
 	//const screenDimensions = require('electron').screen.getCurrentDisplay().size;	// Error: getCurrentDisplay is not a function.
@@ -238,10 +166,6 @@ function createWindow () {
 		}
 	});
 
-	// TODO: Call tray.destroy() when the app is shutting down in order to remove the icon from the system tray
-	// See https://electronjs.org/docs/api/tray
-	// See https://github.com/electron/electron/commit/f6c66a737498223933d0a34c3113515cc6284f74
-
 	/* These two Tray events are available on macOS only.
 	tray.on('mouse-enter', () => {
 		mainWindow.show();
@@ -262,29 +186,7 @@ function createWindow () {
 	});
 	*/
 
-	connectToDatabase();
-
-	/*
-	if (process.platform === 'win32') {
-		consoleLogForDebugOnly('process.platform === \'win32\'; readline...');
-
-		const rl = require('readline').createInterface({
-			input: process.stdin,
-			output: process.stdout
-		});
-
-		rl.on('SIGINT', function () {
-			consoleLogForDebugOnly('process.emit(\'SIGINT\')');
-			process.emit('SIGINT');
-		});
-	}
-
-	process.on('SIGINT', function () {
-		// Graceful shutdown
-		consoleLogForDebugOnly('process.on(\'SIGINT\') ; Graceful shutdown...');
-		process.exit();
-	});
-	*/
+	database.connect();
 
 	// Use a global keyboard shortcut to shut down the app.
 	// See https://github.com/electron/electron/blob/master/docs/tutorial/keyboard-shortcuts.md#global-shortcuts
@@ -330,26 +232,6 @@ app.on('window-all-closed', function () {
 	}
 });
 
-/*
-app.on('before-quit', () => {
-	consoleLogForDebugOnly('app.on(\'before-quit\')');
-
-	if (tray) {
-		tray.destroy();
-		tray = null;
-	}
-});
-
-app.on('will-quit', () => {
-	consoleLogForDebugOnly('app.on(\'will-quit\')');
-
-	if (tray) {
-		tray.destroy();
-		tray = null;
-	}
-});
-*/
-
 app.on('quit', () => {
 	consoleLogForDebugOnly('app.on(\'quit\')');
 
@@ -358,36 +240,5 @@ app.on('quit', () => {
 		tray = null;
 	}
 });
-
-// In this file you can include the rest of your app's specific main process
-// code. You can also put them in separate files and require them here.
-
-// TODO: Detect Ctrl-C on Windows, and call tray.destroy() when CTRL-C is pressed.
-// See https://stackoverflow.com/questions/10021373/what-is-the-windows-equivalent-of-process-onsigint-in-node-js
-// See also https://nodejs.org/api/readline.html#readline_event_sigint
-
-/*
-if (process.platform === "win32") {
-  var rl = require("readline").createInterface({
-    input: process.stdin,
-    output: process.stdout
-  });
-
-  rl.on("SIGINT", function () {
-    process.emit("SIGINT");
-  });
-}
-
-process.on("SIGINT", function () {
-  //graceful shutdown
-  process.exit();
-});
-*/
-
-/*
-process.on('SIGINT', () => {
-	consoleLogForDebugOnly('SIGINT');
-});
-*/
 
 // TODO: Consider using https://www.npmjs.com/package/async-exit-hook to catch Ctrl-C on Windows and/or unhandled exceptions on any platform.

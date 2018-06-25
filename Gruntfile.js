@@ -13,8 +13,8 @@ module.exports = function (grunt) {
 		pkg: packageJsonContents,
 		eslint: {
 			target: [
-				'*.js' //,
-				//'src/*.js' //,
+				'*.js',
+				'src/**/*.js' //,
 				//'test/*.js'
 			]
 		},
