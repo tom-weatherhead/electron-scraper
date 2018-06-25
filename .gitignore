@@ -60,7 +60,7 @@ typings/
 # next.js build output
 .next
 
-db/*.db
-db/*.json
+database/*.db
+database/*.json
 test/
-settings.json
+settings/settings.json

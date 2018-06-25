@@ -1,4 +1,4 @@
-// electron-scraper/utilities.js
+// electron-scraper/src/utilities.js
 
 // For more common utility functions, use Lodash instead?
 

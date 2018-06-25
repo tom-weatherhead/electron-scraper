@@ -1,4 +1,4 @@
-// electron-scraper/main.js
+// electron-scraper/src/app/main.js
 
 // Modules to control the application lifecycle and to create a native browser window:
 const { app, BrowserWindow, globalShortcut, ipcMain, Tray } = require('electron');
@@ -6,11 +6,11 @@ const { app, BrowserWindow, globalShortcut, ipcMain, Tray } = require('electron'
 const low = require('lowdb');
 const FileSync = require('lowdb/adapters/FileSync');
 
-const lowDB_databaseFilePath = './db/lowdb.json';
+const lowDB_databaseFilePath = 'database/lowdb.json';
 const adapter = new FileSync(lowDB_databaseFilePath);
 const db = low(adapter);
 
-//const utilities = require('./utilities.js');
+//const utilities = require('../utilities.js');
 
 const debug = true;
 //const debug = false;
@@ -87,8 +87,8 @@ function constructHttpErrorCodeTestSettings (httpStatusCode) {
 }
 */
 
-const settings = require('./settings.json') || defaultSettings;
-//const settings = require('./settings.example.json') || defaultSettings;
+const settings = require('../../settings/settings.json') || defaultSettings;
+//const settings = require('../../settings/settings.example.json') || defaultSettings;
 //const settings = defaultSettings;
 //const settings = constructHttpErrorCodeTestSettings(500);
 //const settings = constructHttpErrorCodeTestSettings(403);
@@ -236,7 +236,7 @@ function createWindow () {
 	});
 
 	// ... and load the index.html of the app.
-	mainWindow.loadFile('index.html');
+	mainWindow.loadFile('src/window/index.html');
 
 	if (debug) {
 		// Open the DevTools.
@@ -270,7 +270,7 @@ function createWindow () {
 	mainWindow.setPosition(screenDimensions.width - windowWidth, screenDimensions.height - windowHeight - windows10TaskbarHeight);
 
 	// For best results on Windows, use an .ico file. See https://electronjs.org/docs/api/tray .
-	tray = new Tray('./assets/favicon.ico');
+	tray = new Tray('assets/favicon.ico');
 
 	tray.on('click', () => {
 		consoleLogForDebugOnly('tray.on(\'click\')');

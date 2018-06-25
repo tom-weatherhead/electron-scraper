@@ -1,4 +1,4 @@
-// electron-scraper/renderer.js
+// electron-scraper/app/window/renderer.js
 
 // This file is required by the index.html file and will be executed in the renderer process for that window.
 // All of the Node.js APIs are available in this process.
@@ -7,7 +7,7 @@ const { ipcRenderer /*, remote */ } = require('electron');
 
 const matchRegexesInWebPage = require('http-get-regex-capture');
 
-const utilities = require('./utilities.js');
+const utilities = require('../utilities.js');
 
 const defaultTimerIntervalInMilliseconds = 30000;		// === 30 seconds.
 
