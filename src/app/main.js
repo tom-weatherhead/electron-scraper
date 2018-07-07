@@ -7,8 +7,8 @@ const database = require('../database/lowdb.js');
 const settings = require('../settings.js');
 //const utilities = require('../utilities.js');
 
-const debug = true;
-//const debug = false;
+//const debug = true;
+const debug = false;
 
 // Keep a global reference of the window object. If you don't, the window will
 // be closed automatically when the JavaScript object is garbage collected.
@@ -154,7 +154,17 @@ function createWindow () {
 	mainWindow.setPosition(screenDimensions.width - windowWidth, screenDimensions.height - windowHeight - windows10TaskbarHeight);
 
 	// For best results on Windows, use an .ico file. See https://electronjs.org/docs/api/tray .
-	tray = new Tray('assets/favicon.ico');
+	//const iconPath = 'assets/favicon.ico';
+	const iconPaths = [
+		'assets/favicon3.png',
+		'assets/favicon4.png'
+	];
+	const iconIndex = new Date().getMinutes() % iconPaths.length;
+
+	consoleLogForDebugOnly(`iconIndex = ${iconIndex}`);
+	consoleLogForDebugOnly(`iconPaths[iconIndex] = ${iconPaths[iconIndex]}`);
+
+	tray = new Tray(iconPaths[iconIndex]);
 
 	tray.on('click', () => {
 		consoleLogForDebugOnly('tray.on(\'click\')');
